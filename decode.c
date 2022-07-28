@@ -47,7 +47,7 @@ static bool validate_checksum(int hex_in, struct parser *parser)
             return true;
 #else
             fprintf(stderr, "Error: checksum doesn't match\n");
-            return false
+            return false;
 #endif            
         }
     }
