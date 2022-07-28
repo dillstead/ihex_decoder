@@ -1,3 +1,5 @@
+# IHEX Decoder
+
 Decodes IHEX files to standard output.
 
 Usage:
