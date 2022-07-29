@@ -1,7 +1,8 @@
 #ifndef DECODE_H
 #define DECODE_H
 
+#include <stdio.h>
 #include <stdbool.h>
 
-bool decode(int hex_in, int bin_out);
+bool decode(FILE *fin);
 #endif

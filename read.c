@@ -5,6 +5,31 @@
 #include <unistd.h>
 #include "read.h"
 
+int checked_read(void *ptr, size_t size, size_t nmemb, FILE *fin, bool report_eof)
+{
+    size_t num_read;
+    
+    num_read = fread(ptr, size, nmemb, fin);
+    if (num_read < 1)
+    {
+        if (feof(fin))
+        {
+            if (report_eof)
+            {
+                fprintf(stderr, "Error: premature EOF\n");
+            }
+            return 0;
+        }
+        else if (ferror(fin))
+        {
+            fprintf(stderr, "Error reading from file: %s\n",
+                    strerror(errno));
+            return -1;
+        }
+    }
+    return num_read;
+}
+
 static unsigned int hex_to_bin(unsigned char hex)
 {
     if (hex >= '0' && hex <= '9')
@@ -22,37 +47,25 @@ static unsigned int hex_to_bin(unsigned char hex)
     return 256;
 }
 
-ssize_t read_uint8(int fd, uint8_t *value, uint8_t *checksum)
+int read_uint8(FILE *fin, uint8_t *value, uint8_t *checksum)
 {
-    ssize_t num_read;
+    int num_read;
     unsigned char high;
     unsigned char low;
     unsigned int bin;
 
-    num_read = read(fd, &high, sizeof high);
-    if (num_read < 0)
+    num_read = checked_read(&high, sizeof high, 1, fin, true);
+    if (num_read < 1)
     {
-        fprintf(stderr, "Error reading from file: %s\n",
-                strerror(errno));
         return num_read;
     }
-    else if (num_read == 0)
+
+    num_read = checked_read(&low, sizeof low, 1, fin, true);
+    if (num_read < 1)
     {
-        fprintf(stderr, "Error: premature EOF\n");
-        return 0;
-    }
-    num_read = read(fd, &low, sizeof low);
-    if (num_read < 0)
-    {
-        fprintf(stderr, "Error reading from file: %s\n",
-                strerror(errno));
         return num_read;
     }
-    else if (num_read == 0)
-    {
-        fprintf(stderr, "Error: truncated value\n");
-        return -1;
-    }
+
     bin = (hex_to_bin(high) << 4) | hex_to_bin(low);
     if (bin > 255)
     {
@@ -64,18 +77,18 @@ ssize_t read_uint8(int fd, uint8_t *value, uint8_t *checksum)
     return 1;
 }
 
-ssize_t read_uint16(int fd, uint16_t *value, uint8_t *checksum)
+int read_uint16(FILE *fin, uint16_t *value, uint8_t *checksum)
 {
-    ssize_t num_read;
+    int num_read;
     uint8_t high;
     uint8_t low;
 
-    num_read = read_uint8(fd, &high, checksum);
+    num_read = read_uint8(fin, &high, checksum);
     if (num_read <= 0)
     {
         return num_read;
     }
-    num_read = read_uint8(fd, &low, checksum);
+    num_read = read_uint8(fin, &low, checksum);
     if (num_read <= 0)
     {
         return num_read;
@@ -84,22 +97,22 @@ ssize_t read_uint16(int fd, uint16_t *value, uint8_t *checksum)
     return 1;
 }
 
-ssize_t read_uint32(int fd, uint32_t *four_bytes, uint8_t *checksum)
+int read_uint32(FILE *fin, uint32_t *four_bytes, uint8_t *checksum)
 {
     ssize_t num_read;
     uint16_t high;
     uint16_t low;
 
-    num_read = read_uint16(fd, &high, checksum);
+    num_read = read_uint16(fin, &high, checksum);
     if (num_read <= 0)
     {
         return num_read;
     }
-    num_read = read_uint16(fd, &low, checksum);
+    num_read = read_uint16(fin, &low, checksum);
     if (num_read <= 0)
     {
         return num_read;
     }
-    *four_bytes = high << 16 | low;
+    *four_bytes = (uint32_t) high << 16 | low;
     return 1;
 }

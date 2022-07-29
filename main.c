@@ -10,25 +10,33 @@
 
 int main(int argc, char **argv)
 {
-    int hex_in = -1;
+    FILE *fin = NULL;
     int res = EXIT_FAILURE;
-                   
+
     if (argc != 2)
     {
         fprintf(stdout, "Usage: ihex_decoder <input file>\n");
         return EXIT_FAILURE;
     }
     
-    hex_in = open(argv[1], O_RDONLY);
-    if (hex_in < 0)
+    fin = fopen(argv[1], "r");
+    if (fin == NULL)
     {
         fprintf(stderr, "Failed to open %s: %s\n", argv[1],
                 strerror(errno));
         goto cleanup;
     }
-    res = decode(hex_in, 1) ? EXIT_SUCCESS : EXIT_FAILURE;
+
+    if (!decode(fin) || fflush(NULL) < 0)
+    {
+        goto cleanup;
+    }
+    res = EXIT_SUCCESS;
 
 cleanup:
-    close(hex_in);
+    if (fin != NULL)
+    {
+        fclose(fin);
+    }
     return res;
 }

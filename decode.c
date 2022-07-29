@@ -29,12 +29,12 @@ struct parser
     uint8_t checksum;
 };
 
-static bool validate_checksum(int hex_in, struct parser *parser)
+static bool validate_checksum(FILE *fin, struct parser *parser)
 {
-    ssize_t num_read;
+    int num_read;
     uint8_t checksum;
             
-    num_read = read_uint8(hex_in, &checksum, &parser->checksum);
+    num_read = read_uint8(fin, &checksum, &parser->checksum);
     if (num_read == 1)
     {
         if (parser->checksum == 0)
@@ -54,31 +54,12 @@ static bool validate_checksum(int hex_in, struct parser *parser)
     return false;
 }
     
-bool decode(int hex_in, int bin_out)
+bool decode(FILE *fin)
 {
-    FILE *fout;
-    int dup_out;
-    ssize_t num_read;
+    int num_read;
     char c;
     struct parser parser = { 0 };
 
-    dup_out = dup(bin_out);
-    if (dup_out < 0)
-    {
-        fprintf(stderr, "Failed dup: %s\n",
-                strerror(errno));
-        return false;
-    }
-    bin_out = dup_out;
-    
-    fout = fdopen(bin_out, "w");
-    if (fout == NULL)
-    {
-        fprintf(stderr, "Failed stream output: %s\n",
-                strerror(errno));
-        return false;
-    }
-    
     parser.state = START;
     while (parser.state != FINISH && parser.state != ERROR)
     {        
@@ -88,19 +69,22 @@ bool decode(int hex_in, int bin_out)
         {
             uint8_t byte;
 
-            printf("%08" PRIX32 "     ", parser.base_addr + parser.offset);
+            if (fprintf(stdout, "%08" PRIX32 "     ", parser.base_addr + parser.offset) <= 0)
+            {
+                parser.state = ERROR;
+                break;
+            }
             for (uint8_t i = 0; i < parser.byte_count; i++)
             {
-                num_read = read_uint8(hex_in, &byte, &parser.checksum);
-                if (num_read < 1)
+                num_read = read_uint8(fin, &byte, &parser.checksum);
+                if (num_read < 1 || fprintf(stdout, "%02" PRIX8, byte) <= 0)
                 {
+                    num_read = 0;
                     break;
                 }
-                printf("%02" PRIX8, byte);
             }                     
-            if (num_read == 1)
+            if (num_read == 1 && fprintf(stdout, "\n") > 0)
             {
-                printf("\n");
                 parser.state = CHKSUM;
             }
             else
@@ -113,9 +97,9 @@ bool decode(int hex_in, int bin_out)
         {
             if (parser.byte_count == 0)
             {
-                if (validate_checksum(hex_in, &parser))
+                if (validate_checksum(fin, &parser)
+                    && fprintf(stdout, "Starting address %08" PRIX32 "\n", parser.start_addr) > 0)
                 {
-                    printf("Starting address %08" PRIX32 "\n", parser.start_addr);
                     parser.state = FINISH;
                 }
                 else
@@ -137,7 +121,7 @@ bool decode(int hex_in, int bin_out)
             
             if (parser.byte_count == 2)
             {
-                num_read = read_uint16(hex_in, &base_addr, &parser.checksum);
+                num_read = read_uint16(fin, &base_addr, &parser.checksum);
                 if (num_read == 1)
                 {
                     parser.base_addr = (uint32_t) base_addr << (parser.state == XSEG ? 4 : 16);
@@ -161,7 +145,7 @@ bool decode(int hex_in, int bin_out)
         {
             if (parser.byte_count == 4)
             {
-                num_read = read_uint32(hex_in, &parser.start_addr, &parser.checksum);
+                num_read = read_uint32(fin, &parser.start_addr, &parser.checksum);
                 if (num_read == 1)
                 {
                     parser.state = CHKSUM;
@@ -183,19 +167,17 @@ bool decode(int hex_in, int bin_out)
         {
             do
             {
-                num_read = read(hex_in, &c, sizeof c);
+                num_read = checked_read(&c, sizeof c, 1, fin, false);
             }
             while (num_read == 1 && c != ':');
             
             if (num_read < 0)
             {
-                fprintf(stderr, "Error reading from file: %s\n",
-                        strerror(errno));
                 parser.state = ERROR;
             }
-            else if (read_uint8(hex_in, &parser.byte_count, &parser.checksum) != 1
-                     || read_uint16(hex_in, &parser.offset, &parser.checksum) != 1
-                     || read_uint8(hex_in, &parser.state, &parser.checksum) != 1)
+            else if (read_uint8(fin, &parser.byte_count, &parser.checksum) != 1
+                     || read_uint16(fin, &parser.offset, &parser.checksum) != 1
+                     || read_uint8(fin, &parser.state, &parser.checksum) != 1)
             {
                 parser.state = ERROR;
             }
@@ -203,7 +185,7 @@ bool decode(int hex_in, int bin_out)
         }
         case CHKSUM:
         {
-            if (validate_checksum(hex_in, &parser))
+            if (validate_checksum(fin, &parser))
             {
                 parser.state = START;
             }
@@ -223,6 +205,5 @@ bool decode(int hex_in, int bin_out)
         }   
     }
 
-    fclose(fout);
-    return parser.state == FINISH ? true : false;
+    return parser.state == FINISH;
 }
